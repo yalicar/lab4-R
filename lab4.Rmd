@@ -1,0 +1,561 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+library(ggplot2)
+library(caret)
+library(dplyr)
+library(VIM)
+library(class)
+library(reshape2)
+library(plyr)
+library(Johnson)
+
+
+
+```
+
+
+# leer data frame
+```{r}
+dataset <- read.csv("house_prices.csv", sep=",")
+head(dataset)
+```
+
+
+# Verificar en que columnas faltan datos
+```{r}
+colsNA<-colnames(dataset)[!complete.cases(t(dataset))]
+colsNA
+```
+
+
+#Geneando nuevo dataframe con las columnas que tienen datos faltantes
+```{r}
+incompleteData<-dataset %>% dplyr::select(colsNA)
+incompleteData
+```
+
+
+# Calculo de porcentaje de datos faltantes
+```{r}
+porcentajeNA<-as.data.frame(apply(incompleteData, MARGIN = 2, function(col) mean(is.na(col))))
+colnames(porcentajeNA)<-c("porcentaje")
+porcentajeNA
+```
+
+# Identificacion de las columanas que pueden ser procesables 
+```{r}
+procesables<-porcentajeNA %>%
+  filter(porcentajeNA < 0.05)
+procesables
+```
+
+
+# Revisar el tipo de dato de la colunma
+```{r}
+dataset %>%
+  dplyr::select(rownames(procesables))
+```
+
+# Reemplazar N/A con la media
+```{r}
+dataset_media<-dataset %>% dplyr::select(colsNA)
+
+dataset_media$MasVnrArea<-ifelse(is.na(incompleteData$MasVnrArea),
+                                     mean(incompleteData$MasVnrArea, na.rm=TRUE),
+                                     incompleteData$MasVnrArea)
+
+dataset_media$LotFrontage<-ifelse(is.na(dataset$LotFrontage),
+                                     mean(dataset$LotFrontage, na.rm=TRUE),
+                                     dataset$LotFrontage)
+
+p1_avg <- ggplot(data = dataset, aes(x=MasVnrArea))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_media,color="blue")
+
+p2_avg <- ggplot(data = dataset, aes(x=LotFrontage))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_media,color="blue")
+
+
+p1_avg
+p2_avg
+```
+
+## Reemplazar N/A con la mediana
+```{r}
+
+dataset_mediana<-dataset %>% dplyr::select(colsNA)
+
+dataset_mediana$MasVnrArea<-ifelse(is.na(incompleteData$MasVnrArea),
+                                     median(incompleteData$MasVnrArea, na.rm=TRUE),
+                                     incompleteData$MasVnrArea)
+
+dataset_mediana$LotFrontage<-ifelse(is.na(dataset$LotFrontage),
+                                     median(dataset$LotFrontage, na.rm=TRUE),
+                                     dataset$LotFrontage)
+
+p1_med <- ggplot(data = dataset, aes(x=MasVnrArea))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_mediana,color="blue")
+
+p2_med <- ggplot(data = dataset, aes(x=LotFrontage))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_mediana,color="blue")
+
+
+p1_med
+p2_med
+```
+
+# Reemplazar N/A con KNN
+```{r}
+dataset_knn<- kNN(incompleteData,variable=c("LotFrontage","FireplaceQu","MasVnrArea"),k=8)
+dataset_knn
+```
+```{r}
+p1_knn <- ggplot(data = incompleteData, aes(x=MasVnrArea))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_knn,color="blue")
+p2_knn <- ggplot(data = incompleteData, aes(x=LotFrontage))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_knn,color="blue")
+p3_knn <- ggplot(data = incompleteData, aes(x=FireplaceQu))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_knn,color="blue")
+p4_knn<-ggplot(incompleteData, aes(x=FireplaceQu)) +
+      geom_bar() + geom_bar(data=dataset_knn,color="blue")
+  
+p1_knn
+p2_knn
+p3_knn
+p4_knn
+```
+
+# aplicamos sobre el data set original la imputacion de la data, se decidio usar la imputacion por knn ya que es la que menos deformacionm presenta en las graficas de densidad.
+```{r}
+dataset_2<- kNN(dataset,variable=c("LotFrontage","FireplaceQu","MasVnrArea"),k=8)
+dataset_2 <- subset( dataset_2, select = -c(LotFrontage_imp,FireplaceQu_imp,MasVnrArea_imp) )
+dataset_2
+```
+
+# Codificacion de variables categoricas
+```{r}
+
+table(dataset_2$FireplaceQu)
+table(dataset_2$LotShape)
+table(dataset_2$Heating)
+table(dataset_2$ExterQual)
+table(dataset_2$CentralAir)
+
+
+```
+
+# Usando otro dataset, para crear variables a partir de variables categoricas
+```{r}
+subData<- dataset_2 %>%
+  dplyr::select(FireplaceQu, CentralAir)
+
+OHE<-dummyVars("~.", data=dataset_2)
+dataset_2<-data.frame(predict(OHE, newdata=dataset_2))
+dataset_2
+
+# Se convirtieron todas la variables a cartegoricas ya que no representan una gran catidad de columnas extras y pueden seguir siendo manejables 
+```
+# frecuency encoding
+```{r}
+unique(dataset_2$ExterQual)
+```
+# Se decidio dejar todas las variables categoricas codificadas ya que aunque el data set crece al doble aproximadamente sigue siendo manejable para costo cumputacional.
+
+# manejo de outlier
+```{r}
+summary(dataset_2)
+```
+# grafica boxpplot para visualizar los outliers
+```{r}
+subData<-dataset_2 %>%
+  dplyr::select(MSSubClass, LotFrontage, X1stFlrSF,TotalBsmtSF,GrLivArea,GarageArea,MasVnrArea,BsmtFinSF1,BsmtUnfSF)
+
+dataX<-melt(subData)
+
+dataX %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+```
+
+```{r}
+summary(dataset_2$MSSubClass)
+boxplot.stats(dataset_2$LotFrontage)$out
+```
+
+
+
+
+# identificacion de outliers y reemplazo por n/a, reemplazo de n/a por valores generados por knn.
+```{r}
+outliers <- boxplot(dataset_2$LotFrontage, plot = FALSE)$out
+dataset_2[dataset_2$LotFrontage %in% outliers, "LotFrontage"] = NA
+dataset_2<- kNN(dataset_2,variable=c("LotFrontage"),k=7)
+
+outliers <- boxplot(dataset_2$MSSubClass, plot = FALSE)$out
+dataset_2[dataset_2$MSSubClass %in% outliers, "MSSubClass"] = NA
+dataset_2<- kNN(dataset_2,variable=c("MSSubClass"),k=7)
+
+outliers <- boxplot(dataset_2$X1stFlrSF, plot = FALSE)$out
+dataset_2[dataset_2$X1stFlrSF %in% outliers, "X1stFlrSF"] = NA
+dataset_2<- kNN(dataset_2,variable=c("X1stFlrSF"),k=7)
+
+outliers <- boxplot(dataset_2$TotalBsmtSF, plot = FALSE)$out
+dataset_2[dataset_2$TotalBsmtSF %in% outliers, "TotalBsmtSF"] = NA
+dataset_2<- kNN(dataset_2,variable=c("TotalBsmtSF"),k=7)
+
+outliers <- boxplot(dataset_2$GrLivArea, plot = FALSE)$out
+dataset_2[dataset_2$GrLivArea %in% outliers, "GrLivArea"] = NA
+dataset_2<- kNN(dataset_2,variable=c("GrLivArea"),k=7)
+
+outliers <- boxplot(dataset_2$GarageArea, plot = FALSE)$out
+dataset_2[dataset_2$GarageArea %in% outliers, "GarageArea"] = NA
+dataset_2<- kNN(dataset_2,variable=c("GarageArea"),k=7)
+
+outliers <- boxplot(dataset_2$MasVnrArea, plot = FALSE)$out
+dataset_2[dataset_2$MasVnrArea %in% outliers, "MasVnrArea"] = NA
+dataset_2<- kNN(dataset_2,variable=c("MasVnrArea"),k=7)
+
+outliers <- boxplot(dataset_2$BsmtFinSF1, plot = FALSE)$out
+dataset_2[dataset_2$BsmtFinSF1 %in% outliers, "BsmtFinSF1"] = NA
+dataset_2<- kNN(dataset_2,variable=c("BsmtFinSF1"),k=7)
+
+outliers <- boxplot(dataset_2$BsmtUnfSF, plot = FALSE)$out
+dataset_2[dataset_2$BsmtUnfSF %in% outliers, "BsmtUnfSF"] = NA
+dataset_2<- kNN(dataset_2,variable=c("BsmtUnfSF"),k=7)
+
+dataset_2 <- subset( dataset_2, select = -c(LotFrontage_imp,MSSubClass_imp,X1stFlrSF_imp,TotalBsmtSF_imp,GrLivArea_imp,GarageArea_imp,MasVnrArea_imp,BsmtFinSF1_imp,BsmtUnfSF_imp) )
+```
+
+#grafica para ver si las graficas de densidades se distorsionan mucho o no.
+```{r}
+p2_1<- ggplot(data = dataset_2, aes(x=LotFrontage))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset_knn,color="blue") +
+  geom_density(data=incompleteData,color="black")
+
+p2_2<- ggplot(data = dataset_2, aes(x=MSSubClass))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue")
+
+p2_3<- ggplot(data = dataset_2, aes(x=X1stFlrSF))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue") 
+
+p2_4<- ggplot(data = dataset_2, aes(x=TotalBsmtSF))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue") 
+
+p2_5<- ggplot(data = dataset_2, aes(x=GrLivArea))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue") 
+
+p2_6<- ggplot(data = dataset_2, aes(x=GarageArea))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue") 
+
+p2_7<- ggplot(data = dataset_2, aes(x=MasVnrArea))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue") 
+
+p2_8<- ggplot(data = dataset_2, aes(x=BsmtFinSF1))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue") 
+
+p2_9<- ggplot(data = dataset_2, aes(x=BsmtUnfSF))+
+  geom_density(color="red") +
+  # Change the fill colour to differentiate it
+  geom_density(data=dataset,color="blue") 
+
+
+ 
+p2_1
+p2_2
+p2_3
+p2_4
+p2_5
+p2_6
+p2_7
+p2_8
+p2_9
+
+```
+
+# Grafica para visializar si se aplico el cambio en los outliers
+```{r}
+subData<-dataset_2 %>%
+  dplyr::select(MSSubClass, LotFrontage, X1stFlrSF,TotalBsmtSF,GrLivArea,GarageArea,MasVnrArea,BsmtFinSF1,BsmtUnfSF)
+
+dataX<-melt(subData)
+
+dataX %>%
+  ggplot(aes(x=variable, y=value)) +
+  geom_boxplot()
+```
+
+# Transformación de variables
+
+```{r}
+dataset_2$LotFrontage<-log(dataset_2$LotFrontage)
+dataset_2 %>%
+  ggplot(aes(LotFrontage)) + 
+  geom_histogram(color="red") +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=LotFrontage)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(MSSubClass)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=MSSubClass)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(X1stFlrSF)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=X1stFlrSF)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(BsmtUnfSF)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=BsmtUnfSF)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(TotalBsmtSF)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=TotalBsmtSF)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(GrLivArea)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=GrLivArea)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(GarageArea)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=GarageArea)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(MasVnrArea)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_2 %>%
+  ggplot(aes(sample=MasVnrArea)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+```
+```{r}
+dataset_3<-dataset_2
+dataset_3$MSSubClass <- log(dataset_2$MSSubClass)
+# dataset_3$LotFrontage <- log(dataset_2$LotFrontage)  ## esta variable al transformarla no mejora
+dataset_3$X1stFlrSF <- RE.Johnson(dataset_2$X1stFlrSF)$transformed
+dataset_3$TotalBsmtSF <- log(dataset_2$TotalBsmtSF)
+dataset_3$GrLivArea <- sqrt(dataset_2$GrLivArea)
+#dataset_3$GarageArea <- (dataset_2$GarageArea)^1/2 # esta variable se mejora usando la funcion log pero contiene muchos ceros por lo que que al final terniman eliminadolos y dejandolos en N/A usando otras fiunciones no mejora mucho por lo tanto no se transformaran
+#dataset_3$MasVnrArea <- (dataset_2$MasVnrArea)^1/2 # esta variable se mejora usando la funcion log pero contiene muchos ceros por lo que que al final terniman eliminadolos y dejandolos en N/A usando otras fiunciones no mejora mucho por lo tanto no se transformaran
+dataset_3$BsmtUnfSF <- RE.Johnson(dataset_2$BsmtUnfSF)$transformed
+```
+# Se consideran transformar todas estas variables ya que aparentemente son las que mejoran a la hora de ralizar la transformacion, la que esta comentada no mejora con ninguna de las de las transformaciones.
+
+```{r}
+#dataset_3$LotFrontage_log<-log(dataset_2$LotFrontage)
+dataset_3 %>%
+  ggplot(aes(LotFrontage)) + 
+  geom_histogram(color="red") +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=LotFrontage)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(MSSubClass)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=MSSubClass)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(X1stFlrSF)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=X1stFlrSF)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(BsmtUnfSF)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=BsmtUnfSF)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(TotalBsmtSF)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=TotalBsmtSF)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(GrLivArea)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=GrLivArea)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(GarageArea)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=GarageArea)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(MasVnrArea)) + 
+  geom_histogram(aes(y = ..density..),color="red") +
+  geom_density() +
+  theme_minimal()
+
+dataset_3 %>%
+  ggplot(aes(sample=MasVnrArea)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",lwd=1) +
+  theme_minimal()
+```
+#Featuring Scaling
+```{r}
+
+dataset_4 <- normalize(dataset_3, method="standardize")
+dataset_2
+
+```
+
+```{r}
+
+colsNA<-colnames(dataset_4)[!complete.cases(t(dataset_4))]
+colsNA
+```
+```{r}
+
+write.csv(x = dataset_4, file = "house_prices_CI.csv", row.names = TRUE) 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
