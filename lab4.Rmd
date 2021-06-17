@@ -546,7 +546,29 @@ write.csv(x = dataset_4, file = "house_prices_CI.csv", row.names = TRUE)
 
 
 
+```{r}
+# Fordward Selection
+#define intercept-only model
+data_hp <- read.csv("house_prices.csv", sep=",")
+data_hp<- kNN(data_hp,variable=c("LotFrontage","FireplaceQu","MasVnrArea"),k=8)
+data_hp <- subset( data_hp, select = -c(LotFrontage_imp,FireplaceQu_imp,MasVnrArea_imp) )
+xs<-colnames(data_hp)
+xs
 
+intercept_only <- lm(SalePrice ~1, data=data_hp)
+
+#define model with all predictors
+all <- lm(SalePrice ~ ., data=data_hp)
+
+#perform forward stepwise regression
+forward <- step(intercept_only, direction='forward', scope=formula(all), trace=0)
+
+#view results of forward stepwise regression
+forward$anova
+
+#view final model
+forward$coefficients
+```
 
 
 
